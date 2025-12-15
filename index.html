@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chicago Crime Predictor </title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    /* Make sure the map has height, otherwise it won’t show */
+    #map {
+      height: 500px;
+      width: 100%;
+    }
+  </style>
+
+</head>
+
+<body>
+
+  
+
+     <!-- Navigation Bar -->
+<!-- <nav class="navbar"> -->
+  <!-- <div class="nav-container">
+    <div class="nav-logo">🔍 Chicago Crime Predictor</div>
+    <ul class="nav-links">
+      <li><a href="/">🏠 Home</a></li>
+      <li><a href="/predict">📊 Predict</a></li>
+      <li><a href="#upload">📁 Upload</a></li>
+      <li><a href="#about">ℹ️ About</a></li>
+    </ul>
+    <div class="nav-toggle">☰</div>
+  </div>
+</nav> -->
+
+
+
+    <div class="container">
+        <h1>Crime Rate Predictor</h1>
+        
+        <!-- Dataset Upload Section -->
+        <section class="upload-section">
+            <h2>Upload Dataset (CSV)</h2>
+            <form id="uploadForm" enctype="multipart/form-data">
+                <input type="file" id="fileInput" name="file" accept=".csv" required>
+                <button type="submit">Upload & Retrain Model</button>
+            </form>
+            <div id="uploadResult"></div>
+        </section>
+        
+        <!-- Prediction Section -->
+        <section class="predict-section">
+            <h2>Predict Crime Rate</h2>
+            <form id="predictForm">
+                <label for="yearInput">Year:</label>
+                <input type="number" id="yearInput" name="year" min="2000" max="2030" value="2026" required>
+                
+                <label for="districtInput">District (1-25):</label>
+                <input type="number" id="districtInput" name="district" min="1" max="25" value="10" required>
+                
+                <button type="submit">Predict Crime Count</button>
+            </form>
+            <div id="predictResult"></div>
+        </section>
+    </div>
+
+
+    <section class="chart-section">
+  <h2>📈 Crime Trend Analysis</h2>
+  
+  <div class="charts-container">
+    <div class="chart-card">
+      <h3>Yearly Crime Trend</h3>
+      <canvas id="yearlyChart"></canvas>
+    </div>
+    
+    <div class="chart-card">
+      <h3>District-wise Crime Comparison</h3>
+      <canvas id="districtChart"></canvas>
+    </div>
+  </div>
+</section>
+
+
+    <script>
+        // Upload form handler
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('file', document.getElementById('fileInput').files[0]);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                const resultDiv = document.getElementById('uploadResult');
+                if (data.error) {
+                    resultDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+                } else {
+                    resultDiv.innerHTML = `<p class="success">${data.message}</p>`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('uploadResult').innerHTML = `<p class="error">Upload failed: ${error}</p>`;
+            });
+        });
+
+        // Prediction form handler
+        // document.getElementById('predictForm').addEventListener('submit', function(e) {
+        //     e.preventDefault();
+        //     const year = document.getElementById('yearInput').value;
+        //     const district = document.getElementById('districtInput').value;
+            
+        //     fetch('/predict', {
+        //         method: 'POST',
+        //         headers: { 'Content-Type': 'application/json' },
+        //         body: JSON.stringify({ year: parseInt(year), district: parseInt(district) })
+        //     })
+        //     .then(response => response.json())
+        //     .then(data => {
+        //         const resultDiv = document.getElementById('predictResult');
+        //         if (data.error) {
+        //             resultDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+        //         } else {
+        //             resultDiv.innerHTML = `<p class="success">Predicted crime count for District ${district} in ${year}: ${Math.round(data.predicted_crime_count).toLocaleString()}</p>`;
+        //         }
+        //     })
+        //     .catch(error => {
+        //         document.getElementById('predictResult').innerHTML = `<p class="error">Prediction failed: ${error}</p>`;
+        //     });
+        // });
+
+
+
+
+
+
+        
+// Prediction form handler
+document.getElementById('predictForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const year = document.getElementById('yearInput').value;
+    const district = document.getElementById('districtInput').value;
+    
+    fetch('/predict', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ year: parseInt(year), district: parseInt(district) })
+    })
+    .then(response => response.json())
+    .then(data => {
+        const resultDiv = document.getElementById('predictResult');
+        if (data.error) {
+            resultDiv.innerHTML = `<p class="error">Error: ${data.error}</p>`;
+        } else {
+            resultDiv.innerHTML = `<p class="success">
+              Predicted crime count for District ${district} in ${year}: 
+              ${Math.round(data.predicted_crime_count).toLocaleString()}
+            </p>`;
+
+            // 🗺️ Update map dynamically with predicted location
+            if (data.latitude && data.longitude) {
+              map.setView([data.latitude, data.longitude], 12);
+              L.marker([data.latitude, data.longitude])
+                .addTo(map)
+                .bindPopup(`District ${district}<br>Predicted Crimes: ${Math.round(data.predicted_crime_count)}`)
+                .openPopup();
+            }
+        }
+    })
+    .catch(error => {
+        document.getElementById('predictResult').innerHTML = `<p class="error">Prediction failed: ${error}</p>`;
+    });
+});
+
+
+
+
+    </script>
+
+
+<script>
+// ---------- YEARLY CRIME TREND ----------
+const yearlyCtx = document.getElementById('yearlyChart').getContext('2d');
+const yearlyChart = new Chart(yearlyCtx, {
+  type: 'line',
+  data: {
+    labels: [2018, 2019, 2020, 2021, 2022, 2023],
+    datasets: [{
+      label: 'Predicted Crime Count',
+      data: [1100, 1020, 970, 940, 900, 850],
+      borderColor: 'rgba(255, 99, 132, 1)',
+      backgroundColor: 'rgba(255, 99, 132, 0.3)',
+      fill: true,
+      tension: 0.3
+    }]
+  },
+  options: {
+    plugins: { legend: { labels: { color: 'white' } } },
+    scales: {
+      x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+      y: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+    }
+  }
+});
+
+// ---------- DISTRICT-WISE COMPARISON ----------
+const districtCtx = document.getElementById('districtChart').getContext('2d');
+const districtChart = new Chart(districtCtx, {
+  type: 'bar',
+  data: {
+    labels: ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'],
+    datasets: [{
+      label: 'Crime Count',
+      data: [200, 150, 300, 250, 400, 350, 280, 220],
+      backgroundColor: [
+        '#ff6384', '#36a2eb', '#ffcd56', '#4bc0c0', '#9966ff', '#ff9f40', '#c9cbcf', '#4e79a7'
+      ]
+    }]
+  },
+  options: {
+    plugins: { legend: { labels: { color: 'white' } } },
+    scales: {
+      x: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+      y: { ticks: { color: 'white' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+    }
+  }
+});
+</script>
+
+
+<!-- <script>
+document.querySelector('.nav-toggle').addEventListener('click', () => {
+  document.querySelector('.nav-links').classList.toggle('show');
+});
+</script> -->
+
+
+<!-- MAP SECTION -->
+<section class="map-section">
+  <h2>🗺️ Chicago Crime Map</h2>
+  <div id="crimeMap" style="height: 400px; width: 100%; border-radius: 12px;"></div>
+</section>
+
+<!-- Include Leaflet JS and CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+  // Initialize the map
+  const map = L.map('crimeMap').setView([41.8781, -87.6298], 11); // Chicago coordinates
+
+  // Add the base layer
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18,
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // // Example marker (you can update this with crime data dynamically)
+  // L.marker([41.8781, -87.6298])
+  //   .addTo(map)
+  //   .bindPopup('')
+  //   .openPopup();
+
+    
+</script>
+
+
+</body>
+</html>
+
+
+
+
+
+
+
+
+
